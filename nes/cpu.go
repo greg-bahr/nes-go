@@ -15,12 +15,12 @@ const (
 
 // CPU is where program execution happens.
 type CPU struct {
-	A   byte
-	X   byte
-	Y   byte
-	PC  uint16
-	S   byte
-	P   byte
+	A   byte   // accumulator
+	X   byte   // index
+	Y   byte   // index
+	PC  uint16 // program counter
+	S   byte   // stack pointer
+	P   byte   // status
 	bus *Bus
 }
 
