@@ -65,7 +65,7 @@ func (c *CPU) run(instr instruction) {
 	}
 }
 
-// It's either this or a 256 case switch statement, ¯\_(ツ)_/¯
+// It's either this or a big ol switch statement, ¯\_(ツ)_/¯
 var instructions = map[byte]instruction{
 	0x00: instruction{"BRK", (*CPU).BRK, (*CPU).IMP, 7},
 }
