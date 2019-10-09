@@ -24,13 +24,14 @@ type CPU struct {
 	S          byte   // stack pointer
 	P          byte   // status
 	bus        *Bus
-	cyclesLeft byte // Cycles left in current instruction
+	cyclesLeft byte   // Cycles left in current instruction
+	operand    uint16 // operand for current instruction
 }
 
 // Stores instruction information that makes up an opcode.
 type instruction struct {
 	name           string
-	operate        func(c *CPU) bool
+	operate        func(c *CPU)
 	addressingMode func(c *CPU) bool
 	cycles         int
 }
@@ -60,298 +61,303 @@ func (c *CPU) setFlag(flag CPUFlag, val bool) {
 }
 
 func (c *CPU) run(instr instruction) {
-	if instr.addressingMode != nil && instr.operate != nil && instr.addressingMode(c) && instr.operate(c) {
+
+	// If the addressing mode crosses the page boundary, 1 extra cycle needed.
+	if instr.addressingMode != nil && instr.operate != nil && instr.addressingMode(c) {
 		c.cyclesLeft++
 	}
+	instr.operate(c)
+
+	c.PC++
 }
 
 // It's either this or a big ol switch statement, ¯\_(ツ)_/¯
 var instructions = map[byte]instruction{
-	0x00: instruction{"BRK", (*CPU).BRK, (*CPU).IMP, 7},
+	0xEA: instruction{"NOP", (*CPU).nop, (*CPU).imp, 2},
 }
 
 // Addressing Modes
 // Implied
-func (c *CPU) IMP() bool {
+func (c *CPU) imp() bool {
 	return false
 }
 
 // Immediate
-func (c *CPU) IMM() bool {
+func (c *CPU) imm() bool {
 	return false
 }
 
 // Zero Page
-func (c *CPU) ZP0() bool {
+func (c *CPU) zp0() bool {
 	return false
 }
 
 // Zero Page with X Offset
-func (c *CPU) ZPX() bool {
+func (c *CPU) zpx() bool {
 	return false
 }
 
 // Zero Page with Y Offset
-func (c *CPU) ZPY() bool {
+func (c *CPU) zpy() bool {
 	return false
 }
 
 // Relative
-func (c *CPU) REL() bool {
+func (c *CPU) rel() bool {
 	return false
 }
 
 // Absolute
-func (c *CPU) ABS() bool {
+func (c *CPU) abs() bool {
 	return false
 }
 
 // Absolute with X Offset
-func (c *CPU) ABX() bool {
+func (c *CPU) abx() bool {
 	return false
 }
 
 // Absolute with Y Offset
-func (c *CPU) ABY() bool {
+func (c *CPU) aby() bool {
 	return false
 }
 
 // Indirect
-func (c *CPU) IND() bool {
+func (c *CPU) ind() bool {
 	return false
 }
 
 // Indirect X
-func (c *CPU) IZX() bool {
+func (c *CPU) izx() bool {
 	return false
 }
 
 // Indirect Y
-func (c *CPU) IZY() bool {
+func (c *CPU) izy() bool {
 	return false
 }
 
 // Operations
-func (c *CPU) ADC() bool {
-	return false
+func (c *CPU) adc() {
+
 }
 
-func (c *CPU) AND() bool {
-	return false
+func (c *CPU) and() {
+
 }
 
-func (c *CPU) ASL() bool {
-	return false
+func (c *CPU) asl() {
+
 }
 
-func (c *CPU) BCC() bool {
-	return false
+func (c *CPU) bcc() {
+
 }
 
-func (c *CPU) BCS() bool {
-	return false
+func (c *CPU) bcs() {
+
 }
 
-func (c *CPU) BEQ() bool {
-	return false
+func (c *CPU) beq() {
+
 }
 
-func (c *CPU) BIT() bool {
-	return false
+func (c *CPU) bit() {
+
 }
 
-func (c *CPU) BMI() bool {
-	return false
+func (c *CPU) bmi() {
+
 }
 
-func (c *CPU) BNE() bool {
-	return false
+func (c *CPU) bne() {
+
 }
 
-func (c *CPU) BPL() bool {
-	return false
+func (c *CPU) bpl() {
+
 }
 
-func (c *CPU) BRK() bool {
-	return false
+func (c *CPU) brk() {
+
 }
 
-func (c *CPU) BVC() bool {
-	return false
+func (c *CPU) bvc() {
+
 }
 
-func (c *CPU) BVS() bool {
-	return false
+func (c *CPU) bvs() {
+
 }
 
-func (c *CPU) CLC() bool {
-	return false
+func (c *CPU) clc() {
+
 }
 
-func (c *CPU) CLD() bool {
-	return false
+func (c *CPU) cld() {
+
 }
 
-func (c *CPU) CLI() bool {
-	return false
+func (c *CPU) cli() {
+
 }
 
-func (c *CPU) CLV() bool {
-	return false
+func (c *CPU) clv() {
+
 }
 
-func (c *CPU) CMP() bool {
-	return false
+func (c *CPU) cmp() {
+
 }
 
-func (c *CPU) CPX() bool {
-	return false
+func (c *CPU) cpx() {
+
 }
 
-func (c *CPU) CPY() bool {
-	return false
+func (c *CPU) cpy() {
+
 }
 
-func (c *CPU) DEC() bool {
-	return false
+func (c *CPU) dec() {
+
 }
 
-func (c *CPU) DEX() bool {
-	return false
+func (c *CPU) dex() {
+
 }
 
-func (c *CPU) DEY() bool {
-	return false
+func (c *CPU) dey() {
+
 }
 
-func (c *CPU) EOR() bool {
-	return false
+func (c *CPU) eor() {
+
 }
 
-func (c *CPU) INC() bool {
-	return false
+func (c *CPU) inc() {
+
 }
 
-func (c *CPU) INX() bool {
-	return false
+func (c *CPU) inx() {
+
 }
 
-func (c *CPU) INY() bool {
-	return false
+func (c *CPU) iny() {
+
 }
 
-func (c *CPU) JMP() bool {
-	return false
+func (c *CPU) jmp() {
+
 }
 
-func (c *CPU) JSR() bool {
-	return false
+func (c *CPU) jsr() {
+
 }
 
-func (c *CPU) LDA() bool {
-	return false
+func (c *CPU) lda() {
+
 }
 
-func (c *CPU) LDX() bool {
-	return false
+func (c *CPU) ldx() {
+
 }
 
-func (c *CPU) LDY() bool {
-	return false
+func (c *CPU) ldy() {
+
 }
 
-func (c *CPU) LSR() bool {
-	return false
+func (c *CPU) lsr() {
+
 }
 
-func (c *CPU) NOP() bool {
-	return false
+func (c *CPU) nop() {
+
 }
 
-func (c *CPU) ORA() bool {
-	return false
+func (c *CPU) ora() {
+
 }
 
-func (c *CPU) PHA() bool {
-	return false
+func (c *CPU) pha() {
+
 }
 
-func (c *CPU) PHP() bool {
-	return false
+func (c *CPU) php() {
+
 }
 
-func (c *CPU) PLA() bool {
-	return false
+func (c *CPU) pla() {
+
 }
 
-func (c *CPU) PLP() bool {
-	return false
+func (c *CPU) plp() {
+
 }
 
-func (c *CPU) ROL() bool {
-	return false
+func (c *CPU) rol() {
+
 }
 
-func (c *CPU) ROR() bool {
-	return false
+func (c *CPU) ror() {
+
 }
 
-func (c *CPU) RTI() bool {
-	return false
+func (c *CPU) rti() {
+
 }
 
-func (c *CPU) RTS() bool {
-	return false
+func (c *CPU) rts() {
+
 }
 
-func (c *CPU) SBC() bool {
-	return false
+func (c *CPU) sbc() {
+
 }
 
-func (c *CPU) SEC() bool {
-	return false
+func (c *CPU) sec() {
+
 }
 
-func (c *CPU) SED() bool {
-	return false
+func (c *CPU) sed() {
+
 }
 
-func (c *CPU) SEI() bool {
-	return false
+func (c *CPU) sei() {
+
 }
 
-func (c *CPU) STA() bool {
-	return false
+func (c *CPU) sta() {
+
 }
 
-func (c *CPU) STX() bool {
-	return false
+func (c *CPU) stx() {
+
 }
 
-func (c *CPU) STY() bool {
-	return false
+func (c *CPU) sty() {
+
 }
 
-func (c *CPU) TAX() bool {
-	return false
+func (c *CPU) tax() {
+
 }
 
-func (c *CPU) TAY() bool {
-	return false
+func (c *CPU) tay() {
+
 }
 
-func (c *CPU) TSX() bool {
-	return false
+func (c *CPU) tsx() {
+
 }
 
-func (c *CPU) TXA() bool {
-	return false
+func (c *CPU) txa() {
+
 }
 
-func (c *CPU) TXS() bool {
-	return false
+func (c *CPU) txs() {
+
 }
 
-func (c *CPU) TYA() bool {
-	return false
+func (c *CPU) tya() {
+
 }
