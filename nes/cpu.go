@@ -8,7 +8,7 @@ const (
 	C CPUFlag = (1 << 0) // Carry Bit
 	Z CPUFlag = (1 << 1) // Zero
 	I CPUFlag = (1 << 2) // Disable Interrupts
-	U CPUFlag = (1 << 3) // Decimal (unused by NES, always set to 1)
+	D CPUFlag = (1 << 3) // Decimal (unused by NES, always set to 1)
 	B CPUFlag = (1 << 4) // Break
 	R CPUFlag = (1 << 5) // Reserved (unused by NES, always set to 1)
 	V CPUFlag = (1 << 6) // Overflow
@@ -58,6 +58,37 @@ func (c *CPU) setFlag(flag CPUFlag, val bool) {
 	} else {
 		c.P &= byte(^flag)
 	}
+}
+
+func (c *CPU) getFlag(flag CPUFlag) bool {
+	return c.P&byte(flag) > 0
+}
+
+func (c *CPU) reset() {
+	lo := uint16(c.read(0xFFFC))
+	hi := uint16(c.read(0xFFFD))
+
+	c.PC = (hi << 8) | lo
+
+	c.A = 0
+	c.X = 0
+	c.Y = 0
+	c.P = 0 | byte(R)
+	c.S = 0xFD
+
+	c.cyclesLeft = 8
+}
+
+// Interrupt Request
+func (c *CPU) IRQ() {
+	if !c.getFlag(I) {
+
+	}
+}
+
+// Nonmaskable Interrupt
+func (c *CPU) NMI() {
+
 }
 
 func (c *CPU) run(instr instruction) {
