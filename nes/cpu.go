@@ -80,14 +80,14 @@ func (c *CPU) reset() {
 }
 
 // Interrupt Request
-func (c *CPU) IRQ() {
+func (c *CPU) irq() {
 	if !c.getFlag(I) {
 
 	}
 }
 
 // Nonmaskable Interrupt
-func (c *CPU) NMI() {
+func (c *CPU) nmi() {
 
 }
 
