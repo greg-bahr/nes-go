@@ -108,53 +108,109 @@ var instructions = map[byte]instruction{
 }
 
 // Addressing Modes
-// Implied
+// Implicit
 func (c *CPU) imp() bool {
+	c.PC++
 	return false
 }
 
 // Immediate
 func (c *CPU) imm() bool {
+	c.operand = uint16(c.PC)
+	c.PC++
+
 	return false
 }
 
 // Zero Page
 func (c *CPU) zp0() bool {
+	c.operand = uint16(c.read(c.PC))
+	c.PC++
+
 	return false
 }
 
 // Zero Page with X Offset
 func (c *CPU) zpx() bool {
+	c.operand = uint16(c.read(c.PC) + c.X)
+	c.PC++
+
 	return false
 }
 
 // Zero Page with Y Offset
 func (c *CPU) zpy() bool {
+	c.operand = uint16(c.read(c.PC) + c.Y)
+	c.PC++
+
 	return false
 }
 
 // Relative
 func (c *CPU) rel() bool {
+	c.operand = uint16(c.read(c.PC))
+	if c.operand&0x80 == 0x80 {
+		c.operand |= 0xFF00
+	}
+	c.PC++
+	c.operand += c.PC
+
 	return false
 }
 
 // Absolute
 func (c *CPU) abs() bool {
+	low := uint16(c.read(c.PC))
+	c.PC++
+	high := uint16(c.read(c.PC))
+	c.PC++
+
+	c.operand = (high << 8) | low
+
 	return false
 }
 
 // Absolute with X Offset
 func (c *CPU) abx() bool {
-	return false
+	low := uint16(c.read(c.PC))
+	c.PC++
+	high := uint16(c.read(c.PC))
+	c.PC++
+
+	c.operand = (high << 8) | low
+	c.operand += uint16(c.X)
+
+	return (c.operand & 0xFF00) != (high << 8)
 }
 
 // Absolute with Y Offset
 func (c *CPU) aby() bool {
-	return false
+	low := uint16(c.read(c.PC))
+	c.PC++
+	high := uint16(c.read(c.PC))
+	c.PC++
+
+	c.operand = (high << 8) | low
+	c.operand += uint16(c.Y)
+
+	return (c.operand & 0xFF00) != (high << 8)
 }
 
 // Indirect
 func (c *CPU) ind() bool {
+	low := uint16(c.read(c.PC))
+	c.PC++
+	high := uint16(c.read(c.PC))
+	c.PC++
+
+	ptr := (high << 8) | low
+
+	if low == 0x00FF { // Page boundary hardware bug
+		c.operand = (uint16(c.read(ptr&0xFF00)) << 8) | uint16(c.read(ptr))
+	} else {
+		c.operand = (uint16(c.read(ptr+1)) << 8) | uint16(c.read(ptr))
+	}
+
 	return false
 }
 
