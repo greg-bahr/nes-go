@@ -216,12 +216,25 @@ func (c *CPU) ind() bool {
 
 // Indirect X
 func (c *CPU) izx() bool {
+	target := uint16(c.read(c.PC) + c.X)
+	c.PC++
+
+	c.operand = (uint16(c.read(target+1)) << 8) | uint16(c.read(target))
+
 	return false
 }
 
 // Indirect Y
 func (c *CPU) izy() bool {
-	return false
+	target := uint16(c.read(c.PC))
+	c.PC++
+
+	low := uint16(c.read(target))
+	high := uint16(c.read(target + 1))
+
+	c.operand = ((high << 8) | low) + uint16(c.Y)
+
+	return (c.operand & 0xFF00) != (high << 8)
 }
 
 // Operations
