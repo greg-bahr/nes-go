@@ -26,6 +26,7 @@ type CPU struct {
 	bus        *Bus
 	cyclesLeft byte   // Cycles left in current instruction
 	operand    uint16 // operand for current instruction
+	fetched    byte   // fetched data from operand
 }
 
 // Stores instruction information that makes up an opcode.
@@ -92,10 +93,19 @@ func (c *CPU) nmi() {
 }
 
 func (c *CPU) run(instr instruction) {
+	low := c.PC & 0xFF
+	hi := (c.PC & 0xFF00) >> 8
 
 	// If the addressing mode crosses the page boundary, 1 extra cycle needed.
 	if instr.addressingMode != nil && instr.operate != nil && instr.addressingMode(c) {
 		c.cyclesLeft++
+	}
+
+	// If low byte is 0x0A and hi byte is <= 0x60, then just use accumulator value
+	if low == 0x0A && hi <= 0x60 {
+		c.fetched = byte(c.operand)
+	} else {
+		c.fetched = c.read(c.operand)
 	}
 	instr.operate(c)
 
@@ -395,7 +405,17 @@ func (c *CPU) izy() bool {
 
 // Operations
 func (c *CPU) adc() {
+	val := uint16(c.fetched) + uint16(c.A)
+	if c.getFlag(C) {
+		val++
+	}
 
+	c.setFlag(C, val > 255)
+	c.setFlag(Z, val&0xFF == 0)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(V, (^(uint16(c.A)^uint16(c.fetched)&(uint16(c.A)^val)))&0x80 > 0)
+
+	c.A = byte(val & 0xFF)
 }
 
 func (c *CPU) and() {
@@ -567,7 +587,8 @@ func (c *CPU) rts() {
 }
 
 func (c *CPU) sbc() {
-
+	c.fetched = ^c.fetched
+	c.adc()
 }
 
 func (c *CPU) sec() {
