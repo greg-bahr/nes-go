@@ -837,18 +837,30 @@ func (c *CPU) sty() {
 
 func (c *CPU) tax() {
 	c.X = c.A
+
+	c.setFlag(Z, c.X == 0)
+	c.setFlag(N, c.X&0x80 > 0)
 }
 
 func (c *CPU) tay() {
 	c.Y = c.A
+
+	c.setFlag(Z, c.Y == 0)
+	c.setFlag(N, c.Y&0x80 > 0)
 }
 
 func (c *CPU) tsx() {
 	c.X = c.S
+
+	c.setFlag(Z, c.X == 0)
+	c.setFlag(N, c.X&0x80 > 0)
 }
 
 func (c *CPU) txa() {
 	c.A = c.X
+
+	c.setFlag(Z, c.A == 0)
+	c.setFlag(N, c.A&0x80 > 0)
 }
 
 func (c *CPU) txs() {
@@ -857,4 +869,7 @@ func (c *CPU) txs() {
 
 func (c *CPU) tya() {
 	c.A = c.Y
+
+	c.setFlag(Z, c.A == 0)
+	c.setFlag(N, c.A&0x80 > 0)
 }
