@@ -25,6 +25,7 @@ type CPU struct {
 	P                byte   // status
 	bus              *Bus
 	cyclesLeft       byte   // Cycles left in current instruction
+	opcode           byte   // Current instruction byte
 	operand          uint16 // operand for current instruction
 	fetched          byte   // fetched data from operand
 	usingAccumulator bool
@@ -78,19 +79,69 @@ func (c *CPU) reset() {
 	c.P = 0 | byte(R)
 	c.S = 0xFD
 
+	c.operand = 0
+	c.usingAccumulator = false
+	c.fetched = 0
+
 	c.cyclesLeft = 8
+}
+
+func (c *CPU) clock() {
+	if c.cyclesLeft == 0 {
+		c.opcode = c.read(c.PC)
+		c.setFlag(R, true)
+
+		c.PC++
+
+		currentInstruction := instructions[c.opcode]
+		c.run(currentInstruction)
+	}
+
+	c.cyclesLeft--
 }
 
 // Interrupt Request
 func (c *CPU) irq() {
 	if !c.getFlag(I) {
+		c.write(0x100+uint16(c.S), byte(c.PC>>8))
+		c.S--
+		c.write(0x100+uint16(c.S), byte(c.PC))
+		c.S--
 
+		c.setFlag(B, false)
+		c.setFlag(R, true)
+		c.setFlag(I, true)
+		c.write(0x100+uint16(c.S), c.P)
+		c.S--
+
+		c.operand = 0xFFFE
+		low := c.read(c.operand)
+		hi := c.read(c.operand + 1)
+		c.PC = uint16(low) | (uint16(hi) << 8)
+
+		c.cyclesLeft = 7
 	}
 }
 
 // Nonmaskable Interrupt
 func (c *CPU) nmi() {
+	c.write(0x100+uint16(c.S), byte(c.PC>>8))
+	c.S--
+	c.write(0x100+uint16(c.S), byte(c.PC))
+	c.S--
 
+	c.setFlag(B, false)
+	c.setFlag(R, true)
+	c.setFlag(I, true)
+	c.write(0x100+uint16(c.S), c.P)
+	c.S--
+
+	c.operand = 0xFFFA
+	low := c.read(c.operand)
+	hi := c.read(c.operand + 1)
+	c.PC = uint16(low) | (uint16(hi) << 8)
+
+	c.cyclesLeft = 7
 }
 
 func (c *CPU) run(instr instruction) {
