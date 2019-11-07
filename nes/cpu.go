@@ -17,15 +17,18 @@ const (
 
 // CPU is where program execution happens.
 type CPU struct {
-	A          byte   // accumulator
-	X          byte   // index
-	Y          byte   // index
-	PC         uint16 // program counter
-	S          byte   // stack pointer
-	P          byte   // status
-	bus        *Bus
-	cyclesLeft byte   // Cycles left in current instruction
-	operand    uint16 // operand for current instruction
+	A                byte   // accumulator
+	X                byte   // index
+	Y                byte   // index
+	PC               uint16 // program counter
+	S                byte   // stack pointer
+	P                byte   // status
+	bus              *Bus
+	cyclesLeft       byte   // Cycles left in current instruction
+	opcode           byte   // Current instruction byte
+	operand          uint16 // operand for current instruction
+	fetched          byte   // fetched data from operand
+	usingAccumulator bool
 }
 
 // Stores instruction information that makes up an opcode.
@@ -76,30 +79,93 @@ func (c *CPU) reset() {
 	c.P = 0 | byte(R)
 	c.S = 0xFD
 
+	c.operand = 0
+	c.usingAccumulator = false
+	c.fetched = 0
+
 	c.cyclesLeft = 8
+}
+
+func (c *CPU) clock() {
+	if c.cyclesLeft == 0 {
+		c.opcode = c.read(c.PC)
+		c.setFlag(R, true)
+
+		c.PC++
+
+		currentInstruction := instructions[c.opcode]
+		c.run(currentInstruction)
+	}
+
+	c.cyclesLeft--
 }
 
 // Interrupt Request
 func (c *CPU) irq() {
 	if !c.getFlag(I) {
+		c.write(0x100+uint16(c.S), byte(c.PC>>8))
+		c.S--
+		c.write(0x100+uint16(c.S), byte(c.PC))
+		c.S--
 
+		c.setFlag(B, false)
+		c.setFlag(R, true)
+		c.setFlag(I, true)
+		c.write(0x100+uint16(c.S), c.P)
+		c.S--
+
+		c.operand = 0xFFFE
+		low := c.read(c.operand)
+		hi := c.read(c.operand + 1)
+		c.PC = uint16(low) | (uint16(hi) << 8)
+
+		c.cyclesLeft = 7
 	}
 }
 
 // Nonmaskable Interrupt
 func (c *CPU) nmi() {
+	c.write(0x100+uint16(c.S), byte(c.PC>>8))
+	c.S--
+	c.write(0x100+uint16(c.S), byte(c.PC))
+	c.S--
 
+	c.setFlag(B, false)
+	c.setFlag(R, true)
+	c.setFlag(I, true)
+	c.write(0x100+uint16(c.S), c.P)
+	c.S--
+
+	c.operand = 0xFFFA
+	low := c.read(c.operand)
+	hi := c.read(c.operand + 1)
+	c.PC = uint16(low) | (uint16(hi) << 8)
+
+	c.cyclesLeft = 7
 }
 
 func (c *CPU) run(instr instruction) {
+	low := c.PC & 0xFF
+	hi := (c.PC & 0xFF00) >> 8
+
+	if low == 0x0A && hi <= 0x60 {
+		c.usingAccumulator = true
+	}
 
 	// If the addressing mode crosses the page boundary, 1 extra cycle needed.
 	if instr.addressingMode != nil && instr.operate != nil && instr.addressingMode(c) {
 		c.cyclesLeft++
 	}
+
+	if c.usingAccumulator {
+		c.fetched = byte(c.operand)
+	} else {
+		c.fetched = c.read(c.operand)
+	}
 	instr.operate(c)
 
 	c.PC++
+	c.usingAccumulator = false
 }
 
 // It's either this or a big ol switch statement, ¯\_(ツ)_/¯
@@ -395,225 +461,466 @@ func (c *CPU) izy() bool {
 
 // Operations
 func (c *CPU) adc() {
+	val := uint16(c.fetched) + uint16(c.A)
+	if c.getFlag(C) {
+		val++
+	}
 
+	c.setFlag(C, val > 255)
+	c.setFlag(Z, val&0xFF == 0)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(V, (^(uint16(c.A)^uint16(c.fetched)&(uint16(c.A)^val)))&0x80 > 0)
+
+	c.A = byte(val)
 }
 
 func (c *CPU) and() {
+	c.A &= c.fetched
 
+	c.setFlag(N, c.A&0x80 > 0)
+	c.setFlag(Z, c.A == 0)
 }
 
 func (c *CPU) asl() {
+	val := uint16(c.fetched) << 1
 
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(C, val > 255)
+	c.setFlag(Z, val&0xFF == 0)
+
+	if c.usingAccumulator {
+		c.A = byte(val)
+	} else {
+		c.write(c.operand, byte(val))
+	}
 }
 
 func (c *CPU) bcc() {
+	if !c.getFlag(C) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bcs() {
+	if c.getFlag(C) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) beq() {
+	if c.getFlag(Z) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bit() {
-
+	c.setFlag(Z, c.A&c.fetched == 0)
+	c.setFlag(N, c.fetched&(1<<7) > 0)
+	c.setFlag(V, c.fetched&(1<<6) > 0)
 }
 
 func (c *CPU) bmi() {
+	if c.getFlag(N) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bne() {
+	if !c.getFlag(Z) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bpl() {
+	if !c.getFlag(N) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) brk() {
+	c.PC++
 
+	c.setFlag(I, true)
+	c.write(0x100+uint16(c.S), byte(c.PC>>8))
+	c.S--
+	c.write(0x100+uint16(c.S), byte(c.PC))
+	c.S--
+
+	c.setFlag(B, true)
+	c.write(0x100+uint16(c.S), c.P)
+	c.S--
+	c.setFlag(B, false)
+
+	c.PC = uint16(c.read(0xFFFE)) | (uint16(c.read(0xFFFF)) << 8)
 }
 
 func (c *CPU) bvc() {
+	if !c.getFlag(V) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bvs() {
+	if c.getFlag(V) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) clc() {
-
+	c.setFlag(C, false)
 }
 
 func (c *CPU) cld() {
-
+	c.setFlag(D, false)
 }
 
 func (c *CPU) cli() {
-
+	c.setFlag(I, false)
 }
 
 func (c *CPU) clv() {
-
+	c.setFlag(V, false)
 }
 
 func (c *CPU) cmp() {
+	val := c.A - c.fetched
 
+	c.setFlag(C, c.A >= c.fetched)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
 }
 
 func (c *CPU) cpx() {
+	val := c.X - c.fetched
 
+	c.setFlag(C, c.X >= c.fetched)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
 }
 
 func (c *CPU) cpy() {
+	val := c.Y - c.fetched
 
+	c.setFlag(C, c.Y >= c.fetched)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
 }
 
 func (c *CPU) dec() {
+	val := c.fetched - 1
 
+	c.write(c.operand, val)
+	c.setFlag(Z, val == 0)
+	c.setFlag(N, val&0x80 > 0)
 }
 
 func (c *CPU) dex() {
+	c.X--
 
+	c.setFlag(Z, c.X == 0)
+	c.setFlag(N, c.X&0x80 > 0)
 }
 
 func (c *CPU) dey() {
+	c.Y--
 
+	c.setFlag(Z, c.Y == 0)
+	c.setFlag(N, c.Y&0x80 > 0)
 }
 
 func (c *CPU) eor() {
+	c.A ^= c.fetched
 
+	c.setFlag(N, c.A&0x80 > 0)
+	c.setFlag(Z, c.A == 0)
 }
 
 func (c *CPU) inc() {
+	val := c.fetched + 1
 
+	c.write(c.operand, val)
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
 }
 
 func (c *CPU) inx() {
+	c.X++
 
+	c.setFlag(N, c.X&0x80 > 0)
+	c.setFlag(Z, c.X == 0)
 }
 
 func (c *CPU) iny() {
+	c.Y++
 
+	c.setFlag(N, c.Y&0x80 > 0)
+	c.setFlag(Z, c.Y == 0)
 }
 
 func (c *CPU) jmp() {
-
+	c.PC = c.operand
 }
 
 func (c *CPU) jsr() {
+	c.PC--
 
+	c.write(0x100+uint16(c.S), byte(c.PC>>8))
+	c.S--
+	c.write(0x100+uint16(c.S), byte(c.PC))
+	c.S--
+
+	c.PC = c.operand
 }
 
 func (c *CPU) lda() {
+	c.A = c.fetched
 
+	c.setFlag(N, c.A&0x80 > 0)
+	c.setFlag(Z, c.A == 0)
 }
 
 func (c *CPU) ldx() {
+	c.X = c.fetched
 
+	c.setFlag(N, c.X&0x80 > 0)
+	c.setFlag(Z, c.X == 0)
 }
 
 func (c *CPU) ldy() {
+	c.Y = c.fetched
 
+	c.setFlag(N, c.Y&0x80 > 0)
+	c.setFlag(Z, c.Y == 0)
 }
 
 func (c *CPU) lsr() {
+	val := c.fetched >> 1
 
+	c.setFlag(N, false)
+	c.setFlag(C, c.fetched&1 == 1)
+	c.setFlag(Z, val == 0)
+
+	if c.usingAccumulator {
+		c.A = val
+	} else {
+		c.write(c.operand, val)
+	}
 }
 
-func (c *CPU) nop() {
-
-}
+func (c *CPU) nop() {}
 
 func (c *CPU) ora() {
+	c.A |= c.fetched
 
+	c.setFlag(N, c.A&0x80 > 0)
+	c.setFlag(Z, c.A == 0)
 }
 
 func (c *CPU) pha() {
-
+	c.write(0x100+uint16(c.S), c.A)
+	c.S--
 }
 
 func (c *CPU) php() {
-
+	c.setFlag(B, true)
+	c.setFlag(R, true)
+	c.write(0x100+uint16(c.S), c.P)
+	c.setFlag(B, false)
+	c.setFlag(R, false)
+	c.S--
 }
 
 func (c *CPU) pla() {
+	c.S++
+	c.A = c.read(0x100 + uint16(c.S))
 
+	c.setFlag(Z, c.A == 0)
+	c.setFlag(N, c.A&0x80 > 0)
 }
 
 func (c *CPU) plp() {
-
+	c.S++
+	c.P = c.read(0x100 + uint16(c.S))
+	c.setFlag(R, true)
 }
 
 func (c *CPU) rol() {
+	val := (c.fetched << 1)
+	if c.getFlag(C) {
+		val++
+	}
 
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
+	c.setFlag(C, c.fetched>>7 == 1)
+
+	if c.usingAccumulator {
+		c.A = val
+	} else {
+		c.write(c.operand, val)
+	}
 }
 
 func (c *CPU) ror() {
+	val := (c.fetched >> 1)
+	if c.getFlag(C) {
+		val |= (1 << 7)
+	}
 
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(Z, val == 0)
+	c.setFlag(C, c.fetched&1 == 1)
+
+	if c.usingAccumulator {
+		c.A = val
+	} else {
+		c.write(c.operand, val)
+	}
 }
 
 func (c *CPU) rti() {
+	c.S++
+	c.P = c.read(0x100 + uint16(c.S))
+	c.setFlag(R, false)
+	c.setFlag(B, false)
 
+	c.S++
+	low := c.read(0x100 + uint16(c.S))
+	c.S++
+	hi := c.read(0x100 + uint16(c.S))
+
+	c.PC = uint16(low) | (uint16(hi) << 8)
 }
 
 func (c *CPU) rts() {
+	c.S++
+	low := c.read(0x100 + uint16(c.S))
+	c.S++
+	hi := c.read(0x100 + uint16(c.S))
 
+	c.PC = (uint16(low) | (uint16(hi) << 8)) + 1
 }
 
 func (c *CPU) sbc() {
-
+	c.fetched = ^c.fetched
+	c.adc()
 }
 
 func (c *CPU) sec() {
-
+	c.setFlag(C, true)
 }
 
 func (c *CPU) sed() {
-
+	c.setFlag(D, true)
 }
 
 func (c *CPU) sei() {
-
+	c.setFlag(I, true)
 }
 
 func (c *CPU) sta() {
-
+	c.write(c.operand, c.A)
 }
 
 func (c *CPU) stx() {
-
+	c.write(c.operand, c.X)
 }
 
 func (c *CPU) sty() {
-
+	c.write(c.operand, c.Y)
 }
 
 func (c *CPU) tax() {
+	c.X = c.A
 
+	c.setFlag(Z, c.X == 0)
+	c.setFlag(N, c.X&0x80 > 0)
 }
 
 func (c *CPU) tay() {
+	c.Y = c.A
 
+	c.setFlag(Z, c.Y == 0)
+	c.setFlag(N, c.Y&0x80 > 0)
 }
 
 func (c *CPU) tsx() {
+	c.X = c.S
 
+	c.setFlag(Z, c.X == 0)
+	c.setFlag(N, c.X&0x80 > 0)
 }
 
 func (c *CPU) txa() {
+	c.A = c.X
 
+	c.setFlag(Z, c.A == 0)
+	c.setFlag(N, c.A&0x80 > 0)
 }
 
 func (c *CPU) txs() {
-
+	c.S = c.X
 }
 
 func (c *CPU) tya() {
+	c.A = c.Y
 
+	c.setFlag(Z, c.A == 0)
+	c.setFlag(N, c.A&0x80 > 0)
 }
