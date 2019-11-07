@@ -17,16 +17,17 @@ const (
 
 // CPU is where program execution happens.
 type CPU struct {
-	A          byte   // accumulator
-	X          byte   // index
-	Y          byte   // index
-	PC         uint16 // program counter
-	S          byte   // stack pointer
-	P          byte   // status
-	bus        *Bus
-	cyclesLeft byte   // Cycles left in current instruction
-	operand    uint16 // operand for current instruction
-	fetched    byte   // fetched data from operand
+	A                byte   // accumulator
+	X                byte   // index
+	Y                byte   // index
+	PC               uint16 // program counter
+	S                byte   // stack pointer
+	P                byte   // status
+	bus              *Bus
+	cyclesLeft       byte   // Cycles left in current instruction
+	operand          uint16 // operand for current instruction
+	fetched          byte   // fetched data from operand
+	usingAccumulator bool
 }
 
 // Stores instruction information that makes up an opcode.
@@ -96,13 +97,16 @@ func (c *CPU) run(instr instruction) {
 	low := c.PC & 0xFF
 	hi := (c.PC & 0xFF00) >> 8
 
+	if low == 0x0A && hi <= 0x60 {
+		c.usingAccumulator = true
+	}
+
 	// If the addressing mode crosses the page boundary, 1 extra cycle needed.
 	if instr.addressingMode != nil && instr.operate != nil && instr.addressingMode(c) {
 		c.cyclesLeft++
 	}
 
-	// If low byte is 0x0A and hi byte is <= 0x60, then just use accumulator value
-	if low == 0x0A && hi <= 0x60 {
+	if c.usingAccumulator {
 		c.fetched = byte(c.operand)
 	} else {
 		c.fetched = c.read(c.operand)
@@ -110,6 +114,7 @@ func (c *CPU) run(instr instruction) {
 	instr.operate(c)
 
 	c.PC++
+	c.usingAccumulator = false
 }
 
 // It's either this or a big ol switch statement, ¯\_(ツ)_/¯
@@ -419,23 +424,63 @@ func (c *CPU) adc() {
 }
 
 func (c *CPU) and() {
+	c.A &= c.fetched
 
+	c.setFlag(N, c.A&0x80 > 0)
+	c.setFlag(Z, c.A == 0)
 }
 
 func (c *CPU) asl() {
+	val := uint16(c.fetched) << 1
 
+	c.setFlag(N, val&0x80 > 0)
+	c.setFlag(C, val > 255)
+	c.setFlag(Z, val&0xFF == 0)
+
+	if c.usingAccumulator {
+		c.A = byte(val & 0xFF)
+	} else {
+		c.write(c.operand, byte(val&0xFF))
+	}
 }
 
 func (c *CPU) bcc() {
+	if !c.getFlag(C) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bcs() {
+	if c.getFlag(C) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) beq() {
+	if c.getFlag(Z) {
+		c.cyclesLeft++
 
+		c.operand += c.PC
+		if c.operand&0xFF00 != c.PC&0xFF00 {
+			c.cyclesLeft++
+		}
+
+		c.PC = c.operand
+	}
 }
 
 func (c *CPU) bit() {
